@@ -1,0 +1,173 @@
+-- Add this after your existing locals (integrates with your chr, stand, etc.)
+-- Manual 5s Zenitsu-style Head Down -> Tuck Roll Dash (15 studs forward)
+-- Uses Motor6D.C0 tweens for precise "position values" animation
+-- Stores originals automatically - tweak angles/positions in poses table for fine-tuning
+-- Zoom cinematic included (press E to trigger)
+
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Players = game:GetService("Players")
+
+local player = Players.LocalPlayer
+local humanoid = chr:WaitForChild("Humanoid")
+local camera = workspace.CurrentCamera
+
+-- R6 Joints
+local torso = ntorso  -- Your "ntorso"
+local joints = {
+    neck = torso:WaitForChild("Neck"),
+    rshoulder = torso:WaitForChild("Right Shoulder"),
+    lshoulder = torso:WaitForChild("Left Shoulder"),
+    rhip = torso:WaitForChild("Right Hip"),
+    lhip = torso:WaitForChild("Left Hip")
+}
+
+-- Store ORIGINAL C0 values (key for manual posing)
+local origC0 = {}
+for name, joint in pairs(joints) do
+    origC0[name] = joint.C0
+end
+
+-- Relative POSE VALUES (tweak these numbers for perfection - rad = degrees/57.3)
+local poses = {
+    headDown = {  -- 0-1.5s: Cower bow (Zenitsu scared pose)
+        neck = CFrame.Angles(math.rad(-75), math.rad(5), 0),
+        rshoulder = CFrame.Angles(math.rad(-30), math.rad(-10), math.rad(-15)),
+        lshoulder = CFrame.Angles(math.rad(-30), math.rad(10), math.rad(15)),
+        rhip = CFrame.Angles(math.rad(-20), 0, 0),
+        lhip = CFrame.Angles(math.rad(-20), 0, 0)
+    },
+    tuckPrep = {  -- 1.5-2s: Quick tuck in
+        neck = CFrame.Angles(math.rad(-50), 0, math.rad(10)),
+        rshoulder = CFrame.new(-0.2, 0.1, -0.4) * CFrame.Angles(math.rad(70), math.rad(10), math.rad(30)),
+        lshoulder = CFrame.new(0.2, 0.1, -0.4) * CFrame.Angles(math.rad(70), math.rad(-10), math.rad(-30)),
+        rhip = CFrame.new(0.1, -0.8, 0) * CFrame.Angles(math.rad(75), 0, math.rad(-15)),
+        lhip = CFrame.new(-0.1, -0.8, 0) * CFrame.Angles(math.rad(75), 0, math.rad(15))
+    },
+    rollTuck = {  -- 2-4s: Ball tuck (tight during dash)
+        neck = CFrame.Angles(math.rad(-85), 0, 0),
+        rshoulder = CFrame.new(-0.5, 0, -0.5) * CFrame.Angles(math.rad(90), math.rad(20), math.rad(45)),
+        lshoulder = CFrame.new(0.5, 0, -0.5) * CFrame.Angles(math.rad(90), math.rad(-20), math.rad(-45)),
+        rhip = CFrame.new(0.2, -1.2, 0.2) * CFrame.Angles(math.rad(95), 0, math.rad(-20)),
+        lhip = CFrame.new(-0.2, -1.2, -0.2) * CFrame.Angles(math.rad(95), 0, math.rad(20))
+    },
+    untuck = {  -- 4-5s: Relax to idle
+        neck = CFrame.Angles(math.rad(-20), 0, 0),
+        rshoulder = CFrame.Angles(math.rad(-10), 0, 0),
+        lshoulder = CFrame.Angles(math.rad(-10), 0, 0),
+        rhip = CFrame.Angles(math.rad(-5), 0, 0),
+        lhip = CFrame.Angles(math.rad(-5), 0, 0)
+    }
+}
+
+-- Function to apply pose (tweens all joints to relative * orig)
+local function applyPose(poseName, duration, easingStyle, easingDir)
+    local ti = TweenInfo.new(duration or 0.5, easingStyle or Enum.EasingStyle.Quad, easingDir or Enum.EasingDirection.Out)
+    local pose = poses[poseName]
+    local tweens = {}
+    for name, relCF in pairs(pose) do
+        local targetC0 = origC0[name] * relCF
+        tweens[name] = TweenService:Create(joints[name], ti, {C0 = targetC0})
+        tweens[name]:Play()
+    end
+    return tweens
+end
+
+-- RESET to idle
+local function resetPose(duration)
+    local ti = TweenInfo.new(duration or 0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+    local tweens = {}
+    for name, joint in pairs(joints) do
+        tweens[name] = TweenService:Create(joint, ti, {C0 = origC0[name]})
+        tweens[name]:Play()
+    end
+    return tweens
+end
+
+-- Main 5s Animation + Zoom Cinematic
+local function playZenitsuDash()
+    if activu then return end  -- Your toggle
+    activu = true
+    disabled.Value = true  -- Your disabled
+
+    humanoid.PlatformStand = true  -- Disable physics/walk anims
+
+    -- CAMERA: Zoom IN on head (dramatic)
+    camera.CameraType = Enum.CameraType.Scriptable
+    local startCamCF = head.CFrame * CFrame.new(0, 1, 3.5) * CFrame.Angles(math.rad(15), 0, 0)
+    camera.CFrame = startCamCF
+    local zoomIn = TweenService:Create(camera, TweenInfo.new(1.5, Enum.EasingStyle.Quart, Enum.EasingDirection.InOut), {FieldOfView = 12})
+    zoomIn:Play()
+
+    -- PHASE 1: Head Down (0-1.5s)
+    local phase1 = applyPose("headDown", 1.5, Enum.EasingStyle.Quint, Enum.EasingDirection.InOut)
+    phase1.neck.Completed:Wait()
+
+    -- PHASE 2: Tuck Prep (1.5-2s)
+    local phase2 = applyPose("tuckPrep", 0.5)
+    phase2.rshoulder.Completed:Wait()
+
+    -- PHASE 3: ROLL DASH (2-4s) - Tuck + Root Motion Flip Forward
+    local phase3 = applyPose("rollTuck", 0.5)  -- Instant tuck for roll
+    wait(0.1)  -- Sync
+
+    local rollTI = TweenInfo.new(2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut)
+    local rollStart = rot.CFrame
+    local rollEnd = rollStart * CFrame.new(0, -0.5, -length) * CFrame.Angles(-math.pi, 0, 0)  -- Full forward somersault + 15 studs
+    local rootTween = TweenService:Create(rot, rollTI, {CFrame = rollEnd})
+    rootTween:Play()
+
+    -- CAMERA: Zoom OUT + Follow Roll
+    zoomIn:Destroy()  -- End zoom in
+    local zoomOut = TweenService:Create(camera, TweenInfo.new(2, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {FieldOfView = 70})
+    zoomOut:Play()
+
+    local followConn
+    followConn = RunService.Heartbeat:Connect(function()
+        if rootTween.PlaybackState == Enum.PlaybackState.Completed then
+            followConn:Disconnect()
+            return
+        end
+        local offset = CFrame.new(0, 4, 12) * CFrame.Angles(math.rad(-10), 0, 0)
+        camera.CFrame = rot.CFrame * offset
+    end)
+
+    rootTween.Completed:Wait()
+
+    -- PHASE 4: Land & Untuck (4-5s)
+    local phase4 = applyPose("untuck", 0.7)
+    local phase5 = resetPose(0.3)
+    phase5.rshoulder.Completed:Wait()
+
+    -- RESET
+    humanoid.PlatformStand = false
+    camera.CameraType = Enum.CameraType.Custom
+    activu = false
+    disabled.Value = false
+
+    -- Optional: Stun or hitcount++ here
+    hitcount = hitcount + 1
+end
+
+-- Trigger on E (or tie to your activu toggle)
+UserInputService.InputBegan:Connect(function(input, processed)
+    if processed then return end
+    if input.KeyCode == Enum.KeyCode.E then
+        playZenitsuDash()
+    end
+end)
+
+-- BONUS: Stand/Blade Tuck (add to tuckPrep/rollTuck phases)
+-- Create Motor6D for sword on back during roll
+local function tuckStand()
+    local standMotor = Instance.new("Motor6D")
+    standMotor.Name = "StandTuck"
+    standMotor.Part0 = torso
+    standMotor.Part1 = handle
+    standMotor.C0 = CFrame.new(0, 0.8, -1.2) * CFrame.Angles(0, math.pi, math.rad(90))  -- Back stow pose
+    standMotor.Parent = torso
+end
+
+-- Call tuckStand() in PHASE 3 before rootTween
+-- Destroy after: torso:FindFirstChild("StandTuck"):Destroy()
